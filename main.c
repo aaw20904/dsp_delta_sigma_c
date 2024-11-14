@@ -2,13 +2,13 @@
 #include <stdlib.h>
 
 /* run this program using the console pauser or add your own getch, system("pause") or input loop */
-unsigned int streamIIRFilter(unsigned int bitOfStream);
-
+unsigned int streamIIRFilter128(unsigned int bitOfStream);
+unsigned int streamIIRFilter64(unsigned int bitOfStream);
 int main(int argc, char *argv[]) {
 	
-	streamIIRFilter (0x00000001);
+	streamIIRFilter64 (0x00000001);
 	for (int var=0; var<128; var++) {
-		 streamIIRFilter (0x00000000);
+		 streamIIRFilter128 (0x00000000);
 	}
 	return 0;
 }
@@ -21,12 +21,12 @@ int main(int argc, char *argv[]) {
   Arithmetic Precision = 4 Digits                                                                                                                          
   Pass Band Frequency = 3.000 KHz  */
   //sum all the coefs equals 65534
-unsigned int streamIIRFilter(unsigned int bitOfStream){
+unsigned int streamIIRFilter128(unsigned int bitOfStream){
 
 	static unsigned int filterWindow [129]={0};
-	static unsigned int bits [16]={0};
-	
-	const unsigned int coefs[]={1,2,4,6,8,11,14,17,21,26,31,37,44,52,61,71,82,94,108,122,
+	static unsigned int bits [4]={0};
+	unsigned int result=0;
+	const unsigned int coefs[128]={1,2,4,6,8,11,14,17,21,26,31,37,44,52,61,71,82,94,108,122,
 		138,156,174,194,216,238,262,287,313,341,369,399,430,461,493,526,560,594,628,663,697,
 		732,767,801,834,868,900,931,962,991,1019,1046,1071,1094,1116,1136,1153,1169,1183,
 		1195,1204,1210,1216,1218,1218,1216,1210,1204,1195,1183,1169,1153,1136,1116,1094,
@@ -65,9 +65,72 @@ unsigned int streamIIRFilter(unsigned int bitOfStream){
 			//2)apply input bit of stream to word 0
 		
 		bits[0] |= bitOfStream;
+		//B) calculate fileter
 		
+		for (int y=0; y < 128; y++) {
+			if (y < 32) {
+				  if (bits[0] & (1<<y)) { 
+				  	result += coefs[y];
+				  }
+			} else if ((y >= 32) && (y  < 64)){
+				 if (bits[1] & (1<<y)) { 
+				  	result += coefs[y];
+				  }
+			} else if ((y >= 64) && (y  < 96)) {
+				if (bits[2] & (1<<y)) { 
+				  	result += coefs[y];
+				  }
+			} else if (y >= 96) {
+				if (bits[3] & (1<<y)) { 
+			  	   result += coefs[y];
+			    }
+			}
+		}
 		
-		printf("%X, %X, %X, %X \n",bits[0], bits[1], bits[2], bits[3]);
+		printf("%d \n", result );
+		//printf("%X, %X, %X, %X \n",bits[0], bits[1], bits[2], bits[3]);
 		
 }
 
+
+unsigned int streamIIRFilter64(unsigned int bitOfStream){
+
+	static unsigned int filterWindow [65] = {0};
+	static unsigned int bits [2] = {0};
+	unsigned int result=0;
+	const unsigned int coefs[]={24,36,49,66,85,106,131,159,189,222,258,297,338,381,
+	426,472,519,567,615,662,709,753,796,836,874,907,937,963,983,999,1010,1015,1015,
+	1010,999,983,963,937,907,874,836,796,753,709,662,615,567,519,472,426,381,338,297,
+	258,222,189,159,131,106,85,66,49,36,24};
+		bitOfStream &= 0x00000001;
+		
+		//1)shift word 3
+		bits[1] <<= 1;
+		
+		//2)has the word 2 MSB bit?
+		if (bits[0] & 0x80000000) {
+			bits[1] |= 1; //apply bit to higher word
+		}
+		//2)apply input bit of stream to word 0
+			bits[0] <<= 1;
+		    bits[0] |= bitOfStream;
+		//B) calculate fileter
+		
+		for (int y=0; y < 64; y++) {
+			if (y < 32) {
+				  if (bits[0] & (1<<y)) { 
+				  	result += coefs[y];
+				  }
+			} else {
+				
+				if (bits[1] & (1<<y)) { 
+			  	   result += coefs[y];
+			    }
+			  
+			}
+		}
+		
+		//printf("%X, %X \n",bits[0], bits[1]);
+		printf("%d \n", result);
+		
+}

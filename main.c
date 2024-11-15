@@ -1,20 +1,109 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* EXAMPLE
+riff_header='RIFF',
+wav_size=size of wave portion
+wave_header="WAVE"
+fmt_header="fmt"
+fmt_chunk_size=16
+audio_format=1
+num_channels=1
+sample_rate=44100
+byte_rate=88200
+sample_alignment=2
+bit_depth=16
+data_header="data"
+data_bytes=15987456
+*/
+typedef struct wav_header {
+    // RIFF Header
+    char riff_header[4]; // Contains "RIFF"
+    int wav_size; // Size of the wav portion of the file, which follows the first 8 bytes. File size - 8
+    char wave_header[4]; // Contains "WAVE"
+    
+    // Format Header
+    char fmt_header[4]; // Contains "fmt " (includes trailing space)
+    int fmt_chunk_size; // Should be 16 for PCM
+    short audio_format; // Should be 1 for PCM. 3 for IEEE Float
+    short num_channels;
+    int sample_rate;
+    int byte_rate; // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
+    short sample_alignment; // num_channels * Bytes Per Sample
+    short bit_depth; // Number of bits per sample
+    
+    // Data
+    char data_header[4]; // Contains "data"
+    int data_bytes; // Number of bytes in data. Number of samples * num_channels * sample byte size
+    // uint8_t bytes[]; // Remainder of wave file is bytes
+} wav_header;
+
 /* run this program using the console pauser or add your own getch, system("pause") or input loop */
 unsigned int streamIIRFilter128(unsigned int bitOfStream);
 unsigned int streamIIRFilter64(unsigned int bitOfStream);
 unsigned int streamIIRFilter128_v2(unsigned int bitOfStream, unsigned int* pToOutBuffer);
 unsigned int streamIIRFilter64_v2(unsigned int bitOfStream, unsigned int* pToOutBuffer);
-
+void filter128Block(unsigned char* inputStream, unsigned int outputData);
 int main(int argc, char *argv[]) {
-	
-	streamIIRFilter128 (0x00000001);
-	for (int var=0; var<128; var++) {	
-	streamIIRFilter128 (0x00000000);
+	FILE* myAudioFile;
+	FILE* templateFile;
+	FILE* bitStreamFile;
+	FILE* filteredFile;
+	wav_header audio_header;
+	unsigned long long bitStreamSize;
+	unsigned int numOfBlocks;
+	unsigned int numOfBlocksRemainder;
+	const unsigned int bitStreamRate = 384000;
+	unsigned int filteredHiSpeedData[64016];
+	unsigned int inputStreamBuffer[64016];
+	//open template of WAVE file header into structure
+	templateFile = fopen("wav_header","rb");
+	fread(&audio_header, sizeof(wav_header), 1, templateFile);
+    fclose(templateFile);
+    //correct wave data
+    audio_header.sample_rate = 6000;
+    audio_header.byte_rate = 12000;
+    //open bit-stream file
+    bitStreamFile = fopen("stream1.bin","rb");
+    fseek (bitStreamFile, 0, SEEK_END);
+    //size of delt-sigma file
+    bitStreamSize = ftell(bitStreamFile);
+    fseek (bitStreamFile, 0, SEEK_SET);
+    //
+    numOfBlocks = bitStreamSize / 64000;
+    numOfBlocksRemainder = bitStreamSize % 64000;
+    //cretae a file with filtered high-speed data
+    filteredFile = fopen("filtered.bin","wb");
+    for(int y1=0; y1<numOfBlocks;y1++){
+    	// 1)read chunk of stream: read only 8000bytes, 
+    	//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    	// because  8000x8bit=64000;
+    	//one bit - one 32bit word
+    	fread(inputStreamBuffer,64000,1,bitStreamFile);
+    	//2)filtering the one
+    	//streamIIRFilter128_v2()
 	}
+	fclose(filteredFile); 
+    
+    //
+    fclose(bitStreamFile);
 	return 0;
 }
+
+void filter128Block(unsigned char* inputStream, unsigned int* outputData) {
+	unsigned char inByte=0;
+	const char msk = 0x01;
+	for (int a3=0; a3 < 8000; a3++) {
+		inByte = *inputStream; 
+		for (int a4=0; a4<8; a4++ ) {
+			streamIIRFilter64_v2((unsigned int)(inByte & msk), outputData);
+			inByte >>= 1;
+			outputData++;
+		}
+		inputStream++;
+	}
+}
+
 //processing chunk of data -
 //@blockSize - chunk size in bytes
 void processChunkOfBitStream(unsigned char* streamBits, unsigned int* outSamples, unsigned int blockSize) {

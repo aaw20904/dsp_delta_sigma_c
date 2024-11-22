@@ -66,20 +66,19 @@ float invar;
     sumnum += states[126]*znum[127];
     return sumnum;
 }
-
 float DigFil(invar)
 float invar;
 /******************************************************************************/
 /* Filter Solutions Version 2014                 Nuhertz Technologies, L.L.C. */
 /*                                                            www.nuhertz.com */
 /*                                                            +1 602-279-2448 */
-/* 1st Order High Pass Butterworth                                            */
-/* Bilinear Transformation with no Prewarping                                 */
+/* 2nd Order High Pass Butterworth                                            */
+/* Bilinear Transformation with Prewarping                                    */
 /* Sample Frequency = 6.000 KHz                                               */
 /* Standard Form                                                              */
-/* Arithmetic Precision = 4 Digits                                            */
+/* Arithmetic Precision = 9 Digits                                            */
 /*                                                                            */
-/* Pass Band Frequency = 20.00 Hz                                             */
+/* Pass Band Frequency = 30.00 Hz                                             */
 /*                                                                            */
 /******************************************************************************/
 /*                                                                            */
@@ -88,7 +87,7 @@ float invar;
 /*   invar    float       The input to the filter                             */
 /*                                                                            */
 /* Option Selections:                                                         */
-/* Standard C;   Not Initializable;        Internal States;   Optimized;      */
+/* Standard C;   Not Initializable;        Internal States;   Not Optimized;  */
 /*                                                                            */
 /* There is no requirement to ever initialize the filter.                     */
 /* The default initialization is zero when the filter is first called         */
@@ -103,19 +102,24 @@ float invar;
 
 {
     float sumnum=0.0, sumden=0.0;  int i=0;
-    static float states[1] = {0.0};
-    static float znum[2] = {
-        -.9896,
-        .9896
+    static float states[2] = {0.0,0.0};
+    static float znum[3] = {
+        .978030479,
+        -1.95606096,
+        .978030479
     };
-    static float zden[1] = {
-        -.9793
+    static float zden[2] = {
+        .956543677,
+        -1.95557824
     };
     sumnum = sumden = 0.0;
-    sumden += states[0]*zden[0];
-    sumnum += states[0]*znum[0];
-    states[0] = invar-sumden;
-    sumnum += states[0]*znum[1];
+    for (i=0;i<2;i++){
+        sumden += states[i]*zden[i];
+        sumnum += states[i]*znum[i];
+        if (i<1) states[i] = states[i+1];
+    }
+    states[1] = invar-sumden;
+    sumnum += states[1]*znum[2];
     return sumnum;
 }
 
@@ -163,13 +167,14 @@ typedef struct wav_header {
  
 unsigned int streamIIRFilter128_v2(unsigned int bitOfStream, unsigned int* pToOutBuffer);
 unsigned int streamIIRFilter64_v2(unsigned int bitOfStream, unsigned int* pToOutBuffer);
-void filter64_v3(unsigned long long bitStream, unsigned int* buffer);
-void filter128_v3(unsigned long long bitStream, unsigned int* buffer);
-void filter64_v4(unsigned long long bitStream, unsigned int* buffer);
-void decimateBlock(unsigned int* input,   short* output, unsigned int outputSize);
+void filter64_v3(unsigned long long bitStream,   int* buffer);
+void filter128_v3(unsigned long long bitStream,   int* buffer);
+void filter64_v4(unsigned long long bitStream,   int* buffer);
+void filter64_v5 (unsigned long long bitStream,  int* buffer);
+void decimateBlock( int* input,   short* output, unsigned int outputSize);
 
-void filter128OfBlock(unsigned char* inputStream, unsigned int* outputData,unsigned int bytesOfStreamPerBlock);
-void filter64OfBlock(unsigned char* inputStream, unsigned int* outputData,unsigned int bytesOfStreamPerBlock);
+void filter128OfBlock(unsigned char* inputStream,  int* outputData,unsigned int bytesOfStreamPerBlock);
+void filter64OfBlock(unsigned char* inputStream, int* outputData,unsigned int bytesOfStreamPerBlock);
 
 int main(int argc, char *argv[]) {
 	FILE* myAudioFile;
@@ -180,10 +185,10 @@ int main(int argc, char *argv[]) {
 	float fl1,fl2;
 	
 	unsigned long long bitStreamBuffer[256];
-	unsigned int filteredBuffer[8200];
-	unsigned short waveBuffer[8292];
+	 int filteredBuffer[8200];
+	short waveBuffer[8292];
 	unsigned long long  *auxPtrToBitStream;
-	unsigned int  *auxPtrToFilteredBuffer;
+    int  *auxPtrToFilteredBuffer;
 	//amount of 32bit words per block 
     const unsigned int intWordsPerBlock = 8192;
     //amount of 64bit words of bitstream per block 
@@ -225,7 +230,7 @@ int main(int argc, char *argv[]) {
 		//2)iterate the block and processing data
 		for (int y1=0; y1<bsLongPerBlock; y1++) {
 		      //a) processing 64bits of BS
-			  	filter64_v4(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			  	filter64_v5(*auxPtrToBitStream, auxPtrToFilteredBuffer);
 			  //b)increment pointers
 			  auxPtrToBitStream++;
 			  auxPtrToFilteredBuffer += 64;
@@ -275,7 +280,7 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-void filter128OfBlock(unsigned char* inputStream, unsigned int* outputData,unsigned int bytesOfStreamPerBlock) {
+void filter128OfBlock(unsigned char* inputStream,   int* outputData,unsigned int bytesOfStreamPerBlock) {
 	 
 	unsigned char inByte=0;
 	const char msk = 0x01;
@@ -312,7 +317,7 @@ void filter128OfBlock(unsigned char* inputStream, unsigned int* outputData,unsig
 	}
 }
 
-void filter64OfBlock(unsigned char* inputStream, unsigned int* outputData,unsigned int bytesOfStreamPerBlock) {
+void filter64OfBlock(unsigned char* inputStream,   int* outputData,unsigned int bytesOfStreamPerBlock) {
 	unsigned int* ptr = outputData; 
 	unsigned char inByte=0;
 	const char msk = 0x01;
@@ -327,96 +332,97 @@ void filter64OfBlock(unsigned char* inputStream, unsigned int* outputData,unsign
 	}
 }
 
-void decimateBlock(unsigned int* input,   short* output, unsigned int outputSize){
+void decimateBlock( int* input,   short* output, unsigned int outputSize){
 	float sample;
    for(;outputSize > 0;){
    	sample = (float)*input;
    	
-  	*output = (short) DigFil(sample);
+  	*output =  (short) DigFil(sample);
   	input += 64;
   	output++;
-  	if(outputSize & 1 ){
+  	//if(outputSize & 1 ){
   		
-	  }
+	 // }
   	outputSize--;
   }
 }
 //{{{{{{{{{{{
+//55555555555555555555555555555555555555555555555555555555555555555
 /**the filter get a chunk (64bit) of bit stream
  and store result (each bit) into 32bit array**/ 
-void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
+void filter64_v5 (unsigned long long bitStream,  int* buffer) {
 	
 	unsigned long long bitToProcess = 0;
 	unsigned long long mask = 1;
-	float acc = 0;
+	unsigned int acc = 0;
 	static unsigned long long window = 0; 
 	short idx = 0;
-		const float coefs[]={
-		    76.530036926, 
-			152.881332397, 
-			228.875564575,
-			304.335266113, 
-			379.084167480, 
-			452.947692871, 
-			525.753356934, 
-			597.331054688, 
-			667.513671875, 
-			736.137268066, 
-			803.041625977, 
-			868.070434570,
-			931.071838379, 
-			991.898681641, 
-			1050.408935547, 
-			1106.465942383, 
-			1159.938598633, 
-			1210.702270508, 
-			1258.638305664, 
-			1303.634643555, 
-			1345.586303711, 
-			1384.395263672, 
-			1419.970947266, 
-			1452.230102539, 
-			1481.097656250, 
-			1506.506103516, 
-			1528.395874023, 
-			1546.716064453, 
-			1561.423828125, 
-			1572.484619141, 
-			1579.873168945, 
-			1583.571533203, 
-			1583.571533203, 
-			1579.873046875, 
-			1572.484497070, 
-			1561.423583984, 
-			1546.715820313, 
-			1528.395507813, 
-			1506.505615234, 
-			1481.097290039,
-			1452.229614258, 
-			1419.970458984, 
-			1384.394653320, 
-			1345.585571289, 
-			1303.633911133, 
-			1258.637451172, 
-			1210.701416016, 
-			1159.937744141, 
-			1106.464965820, 
-			1050.407958984, 
-			991.897705078, 
-			931.070800781, 
-			868.069396973, 
-			803.040527344, 
-			736.136169434, 
-			667.512451172, 
-			597.329772949, 
-			525.752014160, 
-			452.946289063, 
-			379.082702637, 
-			304.333770752, 
-			228.874038696, 
-			152.879760742, 
-            76.528419495
-		};
+	//24 bits
+		const unsigned int coefs[]={
+12345, 
+18193, 
+25249, 
+33601, 
+43325, 
+54480, 
+67105, 
+81218, 
+96816, 
+113868, 
+132318, 
+152082, 
+173050, 
+195084, 
+218021, 
+241672, 
+265828, 
+290259, 
+314719, 
+338949, 
+362684, 
+385651, 
+407581, 
+428208, 
+447276, 
+464546, 
+479795, 
+492825, 
+503464, 
+511571, 
+517036, 
+519788, 
+519788, 
+517036, 
+511571, 
+503464, 
+492825, 
+479795, 
+464546, 
+447276, 
+428208, 
+407581, 
+385651, 
+362684, 
+338949, 
+314719, 
+290259, 
+265828, 
+241672, 
+218021, 
+195084, 
+173050, 
+152082, 
+132318, 
+113868, 
+96816, 
+81218, 
+67105, 
+54480, 
+43325, 
+33601, 
+25249, 
+18193, 
+12345,  };
 	
 	for (int bitCount=0; bitCount < 64; bitCount++) {
 		//extracting low bit
@@ -508,47 +514,7 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 		};
 		mask <<= 1;
 		idx++;
-				if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
 		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-				if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -588,7 +554,7 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 		};
 		mask <<= 1;
 		idx++;
-				if (window & mask) {
+			if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -628,46 +594,7 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 		};
 		mask <<= 1;
 		idx++;
-				if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
 		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;		if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -707,7 +634,87 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 		};
 		mask <<= 1;
 		idx++;
-				if (window & mask) {
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;	
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -748,7 +755,427 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 		mask <<= 1;
 		idx++;
 		//store result
-		*buffer = acc;;
+	 
+		*buffer = (65535 - (acc >> 9));
+		//increment pointer (to point to next word)
+		buffer++;
+	
+		//shift BitStr to have next bit al low bit for processing
+		bitStream >>= 1;
+	}
+	   
+	 
+}
+
+/**the filter get a chunk (64bit) of bit stream
+ and store result (each bit) into 32bit array**/ 
+void filter64_v4 (unsigned long long bitStream,  int* buffer) {
+	
+	unsigned long long bitToProcess = 0;
+	unsigned long long mask = 1;
+	float acc = 0;
+	static unsigned long long window = 0; 
+	short idx = 0;
+	//24 bits
+		const float coefs[]={
+19591.986328125 , 
+39138.214843750 , 
+58593.035156250 , 
+77911.007812500 , 
+97047.023437500 , 
+115956.367187500 , 
+134594.890625000 , 
+152919.062500000 , 
+170886.093750000 , 
+188454.000000000 , 
+205581.781250000 , 
+222229.406250000 , 
+238358.015625000 , 
+253929.921875000 , 
+268908.750000000 , 
+283259.562500000 , 
+296948.781250000 , 
+309944.468750000 , 
+322216.281250000 , 
+333735.531250000 , 
+344475.312500000 , 
+354410.562500000 , 
+363518.062500000 , 
+371776.562500000 , 
+379166.750000000 , 
+385671.406250000 , 
+391275.281250000 , 
+395965.312500000 , 
+399730.562500000 , 
+402562.187500000 , 
+404453.656250000 , 
+405400.468750000 , 
+405400.468750000 , 
+404453.625000000 , 
+402562.156250000 , 
+399730.500000000 , 
+395965.250000000 , 
+391275.187500000 , 
+385671.281250000 , 
+379166.656250000 , 
+371776.437500000 , 
+363517.937500000 , 
+354410.406250000 , 
+344475.125000000 , 
+333735.343750000 , 
+322216.062500000 , 
+309944.250000000 , 
+296948.562500000 , 
+283259.312500000 , 
+268908.500000000 , 
+253929.671875000 , 
+238357.750000000 , 
+222229.140625000 , 
+205581.500000000 , 
+188453.718750000 , 
+170885.781250000 , 
+152918.734375000 , 
+134594.546875000 , 
+115956.007812500 , 
+97046.648437500 , 
+77910.625000000 , 
+58592.644531250 , 
+39137.812500000 , 
+19591.572265625 ,  };
+	
+	for (int bitCount=0; bitCount < 64; bitCount++) {
+		//extracting low bit
+	     bitToProcess = bitStream & 1;	
+	     //shifting window
+		window <<= 1;
+		//apply new bit
+	    window |= bitToProcess;
+	    mask = 1;
+	    idx = 0;
+		acc = 0;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+			if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;	
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		//store result
+		acc = acc/256.000000000;
+		*buffer = (unsigned int)acc;
 		//increment pointer (to point to next word)
 		buffer++;
 	
@@ -761,7 +1188,7 @@ void filter64_v4 (unsigned long long bitStream, unsigned int* buffer) {
 //}}}}}}}
 /**the filter get a chunk (64bit) of bit stream
  and store result (each bit) into 32bit array**/ 
-void filter64_v3(unsigned long long bitStream, unsigned int* buffer){
+void filter64_v3 (unsigned long long bitStream, int* buffer) {
 	
 	unsigned long long bitToProcess = 0;
 	unsigned long long mask = 1;
@@ -863,47 +1290,7 @@ void filter64_v3(unsigned long long bitStream, unsigned int* buffer){
 		};
 		mask <<= 1;
 		idx++;
-				if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
 		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-				if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -1022,47 +1409,88 @@ void filter64_v3(unsigned long long bitStream, unsigned int* buffer){
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
-		idx++;		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
-		idx++;
-		if (window & mask) {
-			acc +=coefs[idx];
-		};
-		mask <<= 1;
 		idx++;
 				if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
+			acc +=coefs[idx];
+		};
+		mask <<= 1;
+		idx++;
+		if (window & mask) {
 			acc +=coefs[idx];
 		};
 		mask <<= 1;
@@ -1116,7 +1544,7 @@ void filter64_v3(unsigned long long bitStream, unsigned int* buffer){
 
 /**the filter get a chunk (64bit) of bit stream
  and store result (each bit) into 32bit array**/ 
-void filter128_v3(unsigned long long bitStream, unsigned int* buffer){
+void filter128_v3(unsigned long long bitStream,  int* buffer){
 	
 	unsigned long long bitToProcess = 0;
 	unsigned long long mask = 1;

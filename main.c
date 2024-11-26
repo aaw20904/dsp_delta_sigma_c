@@ -251,7 +251,7 @@ void filter128_v3(unsigned long long bitStream,   int* buffer);
 void filter64_v4(unsigned long long bitStream,   int* buffer);
 void filter64_v5 (unsigned long long bitStream,  int* buffer);
 void decimateBlock( int* input,   short* output, unsigned int outputSize);
-
+void cic_filter(unsigned long long bitStream, int* out);
 void filter128OfBlock(unsigned char* inputStream,  int* outputData,unsigned int bytesOfStreamPerBlock);
 void filter64OfBlock(unsigned char* inputStream, int* outputData,unsigned int bytesOfStreamPerBlock);
 
@@ -309,7 +309,8 @@ int main(int argc, char *argv[]) {
 		//2)iterate the block and processing data
 		for (int y1=0; y1<bsLongPerBlock; y1++) {
 		      //a) processing 64bits of BS
-			  	filter64_v5(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			  	/////filter64_v5(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			  	cic_filter(*auxPtrToBitStream, auxPtrToFilteredBuffer);
 			  //b)increment pointers
 			  auxPtrToBitStream++;
 			  auxPtrToFilteredBuffer += 64;
@@ -414,11 +415,15 @@ void filter64OfBlock(unsigned char* inputStream,   int* outputData,unsigned int 
 
 void decimateBlock( int* input,   short* output, unsigned int outputSize){
 	float sample;
+	int avg;
  
    for(;outputSize > 0;){
-   
-   	 
-   	sample = (float)*input;
+     avg=0;
+     for (short x1=0;x1<64;x1++){
+     	avg += input[x1];
+	 }
+   	 avg <<= 3;
+   	sample = (float)avg;
    	
   	*output =  (short) DigFil(sample);
   	input += 64;
@@ -2417,14 +2422,14 @@ unsigned int streamIIRFilter128_v2(unsigned int bitOfStream, unsigned int* pToOu
 
 void cic_filter(unsigned long long bitStream, int* out) {
 	//static int* combDelayBasePointer=0; //full pointers to memory
-	unsigned char comb8In, comb8Out =0;//contains low 8-bit of addresses
+	unsigned char comb8IdxIn, comb8IdxOut =0;//contains low 8-bit of addresses
 	static int combSamples [64]={0}; //delay buffer
 	static int acc=0;
-	const long long mask = 1;
+	const unsigned long long mask = 1;
 	int  comb=0;
 	//init low parts
-	comb8In = 0;
-	comb8Out = 4; //size of int = 4bytes
+	comb8IdxIn = 0;
+	comb8IdxOut = 4; //size of int = 4bytes
 	
 	for (int x1=0; x1 < 64; x1++) {
 			// processing of a bit from bit stream
@@ -2432,12 +2437,12 @@ void cic_filter(unsigned long long bitStream, int* out) {
 		//2)Add the lowest bit to acc:
 	      acc += bitStream & mask;
 	    //3)Send integrator to a comb:
-		comb = acc - combSamples [ (comb8Out >> 2)];
+		comb = acc - combSamples [ (comb8IdxOut >> 2)];
 		//4)Assign the current value
-		combSamples[(comb8In >> 2)] = acc;
+		combSamples[(comb8IdxIn >> 2)] = acc;
 		 //5) Shift low parts of pointers
-		 comb8In += 4;
-		 comb8Out += 4;
+		 comb8IdxIn += 4;
+		 comb8IdxOut += 4;
 		 //6)save new sample
 		 *out = comb;
 		 //7)increment out opointer

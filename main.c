@@ -2453,3 +2453,82 @@ void cic_filter(unsigned long long bitStream, int* out) {
 
 	
 }
+//CIC filter with common coeficient N = 64
+void cic_4x4 (unsigned long long bitStream, int* out) {
+ //indexes
+ const unsigned long long streamMask =1; 
+ const unsigned char maxIndex=3; 
+ static unsigned char  comb2OutpIdx, comb3OutpIdx, comb1OutpIdx, comb4OutpIdx=0;
+ 
+ static unsigned char comb1InpIdx,comb2InpIdx,comb3InpIdx,comb4InpIdx =1;
+ static int combSamples1[4]={0};
+ static int combSamples2[4]={0};
+ static int combSamples3[4]={0};
+ static int combSamples4[4]={0};
+
+ static int acc1, acc2, acc3, acc4 = 0;
+ static int comb1, comb2, comb3, comb4 = 0;
+ for (int x1=0; x1<64; x1++) {
+ 	//*****1-st filter (CIC bit-filter)
+ 	//a) accumulater 
+ 	acc1 += (bitStream & streamMask);
+ 	//b) assign acc result to a comb delay
+ 	combSamples1[comb1InpIdx] = acc1;
+	 //c) calculate comb
+	 comb1 = acc1 - combSamples1[comb1OutpIdx];
+	 //d)increment indexes
+	 //e) 'wrap around'
+	 comb1InpIdx = (comb1InpIdx + 1) %  maxIndex;
+	 comb1OutpIdx = (comb1OutpIdx + 1) %  maxIndex;
+	 //****2-nd filter CIC
+	 //runs every 4-nd time
+	 if ( (x1 % 4) == 0) {
+	 	//acc, shifting to reconstruct input value
+	 	acc2 += (comb1 << 2); 
+	 	//b) assign acc result to a comb delay
+	 	combSamples2[comb2InpIdx] = acc2;
+		 //c) calculate comb
+		 comb2 = acc2 - combSamples2[comb2OutpIdx];
+			 //d)increment indexes
+		 //e) 'wrap around'
+		 comb2InpIdx = (comb2InpIdx + 1) %  maxIndex;
+		 comb2OutpIdx = (comb2OutpIdx + 1) %  maxIndex;
+	 }
+	 //**3-d filter CIC
+	  if ( (x1 % 16) == 0) {
+	 	//acc, shifting to reconstruct input value
+	 	acc3 += (comb2 << 2); 
+	 	//b) assign acc result to a comb delay
+	 	combSamples3[comb3InpIdx] = acc3;
+		 //c) calculate comb
+		 comb3 = acc3 - combSamples3[comb3OutpIdx];
+		 	 //d)increment indexes
+		 //e) 'wrap around'
+		 comb3InpIdx = (comb3InpIdx + 1) %  maxIndex;
+		 comb3OutpIdx = (comb3OutpIdx + 1) %  maxIndex;
+	 }
+	 //***4-th filter CIC
+	 if ( (x1 % 32) == 0) {
+	 	//acc, shifting to reconstruct input value
+	 	acc4 += (comb3 << 2); 
+	 	//b) assign acc result to a comb delay
+	 	combSamples4[comb4InpIdx] = acc4;
+		 //c) calculate comb
+		 comb4 = acc4 - combSamples4[comb4OutpIdx];
+		 	 //d)increment indexes
+		 //e) 'wrap around'
+		 comb4InpIdx = (comb4InpIdx + 1) %  maxIndex;
+		 comb4OutpIdx = (comb4OutpIdx + 1) %  maxIndex;
+	 }
+	 //when x1 == 63, write data from 3-d CIC into output
+	 if ((x1 & 63) == 0 ) {
+	 	*out = comb4;
+	 }
+	 
+	 bitStream >>= 1;
+	  
+ }
+ 
+ 
+}
+	

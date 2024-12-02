@@ -254,8 +254,10 @@ void decimateBlock( int* input,   short* output, unsigned int outputSize);
 void cic_filter(unsigned long long bitStream, int* out);
 void filter128OfBlock(unsigned char* inputStream,  int* outputData,unsigned int bytesOfStreamPerBlock);
 void filter64OfBlock(unsigned char* inputStream, int* outputData,unsigned int bytesOfStreamPerBlock);
+void deltaSigmaToInt(unsigned long long bitStream, int* out);
 
 int main(int argc, char *argv[]) {
+	FILE* rawIntegersFile;
 	FILE* myAudioFile;
 	FILE* templateFile;
 	FILE* bitStreamFile;
@@ -265,9 +267,11 @@ int main(int argc, char *argv[]) {
 	
 	unsigned long long bitStreamBuffer[256];
 	 int filteredBuffer[8200];
+	 int rawIntegerBuffer[8200];
 	short waveBuffer[8292];
 	unsigned long long  *auxPtrToBitStream;
     int  *auxPtrToFilteredBuffer;
+    int *auxPtrToRawIntegrs;
 	//amount of 32bit words per block 
     const unsigned int intWordsPerBlock = 8192;
     //amount of 64bit words of bitstream per block 
@@ -287,6 +291,7 @@ int main(int argc, char *argv[]) {
     //-------------------DBG-}
     //open bs file
     bitStreamFile = fopen("stream1.bin","rb");
+ 
     //read bitstream file size
     fseek(bitStreamFile,0,SEEK_END);
     bitStreamLength = ftell(bitStreamFile);
@@ -295,6 +300,7 @@ int main(int argc, char *argv[]) {
     wholeBsLongBlocks = bitStreamLength / (bsLongPerBlock << 3); //mult by 8 
     //open temporaty file
     filteredFile = fopen("filtered","wb");
+    rawIntegersFile = fopen("rawnumbers","wb");
     
     
 		
@@ -303,21 +309,27 @@ int main(int argc, char *argv[]) {
 		//initializing auxialary pointers
 	     auxPtrToBitStream = bitStreamBuffer;
 	     auxPtrToFilteredBuffer = filteredBuffer;
+	     auxPtrToRawIntegers = rawIntegerBuffer;
 		//reading all the bs file by blocks
 		//1)read chunk into input buffer
 		fread(bitStreamBuffer,bsLongPerBlock,8,bitStreamFile);
-		//2)iterate the block and processing data
+ 
+		
+		//2.2)iterate the block and processing data
 		for (int y1=0; y1<bsLongPerBlock; y1++) {
 		      //a) processing 64bits of BS
 			  	/////filter64_v5(*auxPtrToBitStream, auxPtrToFilteredBuffer);
 			  	cic_filter(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			  	deltaSigmaToInt(*auxPtrToBitStream, auxPtrToRawIntegers);
 			  //b)increment pointers
 			  auxPtrToBitStream++;
+			  auxPtrToRawIntegers++;
 			  auxPtrToFilteredBuffer += 64;
 		}
 		
 		//3)Save results (block) into temp file
 		fwrite(filteredBuffer,intWordsPerBlock, 4, filteredFile);
+		fwrite(rawIntegerBuffer,intWordsPerBlock, 4, rawIntegersFile);
 	}
 	 	
 	 //calculating amount of 32-bit words in high speed data 384kHz
@@ -355,6 +367,7 @@ int main(int argc, char *argv[]) {
 	
 	fclose(myAudioFile);
 	fclose(filteredFile);
+	fclose(rawIntegersFile);
     ///free memory
     //free(bitStreamBuffer);
     //free(filteredBuffer);
@@ -447,70 +460,70 @@ void filter64_v5 (unsigned long long bitStream,  int* buffer) {
 	short idx = 0;
 	//24 bits
 		const unsigned int coefs[]={
-12345, 
-18193, 
-25249, 
-33601, 
-43325, 
-54480, 
-67105, 
-81218, 
-96816, 
-113868, 
-132318, 
-152082, 
-173050, 
-195084, 
-218021, 
-241672, 
-265828, 
-290259, 
-314719, 
-338949, 
-362684, 
-385651, 
-407581, 
-428208, 
-447276, 
-464546, 
-479795, 
-492825, 
-503464, 
-511571, 
-517036, 
-519788, 
-519788, 
-517036, 
-511571, 
-503464, 
-492825, 
-479795, 
-464546, 
-447276, 
-428208, 
-407581, 
-385651, 
-362684, 
-338949, 
-314719, 
-290259, 
-265828, 
-241672, 
-218021, 
-195084, 
-173050, 
-152082, 
-132318, 
-113868, 
-96816, 
-81218, 
-67105, 
-54480, 
-43325, 
-33601, 
-25249, 
-18193, 
-12345,  };
+	12345, 
+	18193, 
+	25249, 
+	33601, 
+	43325, 
+	54480, 
+	67105, 
+	81218, 
+	96816, 
+	113868, 
+	132318, 
+	152082, 
+	173050, 
+	195084, 
+	218021, 
+	241672, 
+	265828, 
+	290259, 
+	314719, 
+	338949, 
+	362684, 
+	385651, 
+	407581, 
+	428208, 
+	447276, 
+	464546, 
+	479795, 
+	492825, 
+	503464, 
+	511571, 
+	517036, 
+	519788, 
+	519788, 
+	517036, 
+	511571, 
+	503464, 
+	492825, 
+	479795, 
+	464546, 
+	447276, 
+	428208, 
+	407581, 
+	385651, 
+	362684, 
+	338949, 
+	314719, 
+	290259, 
+	265828, 
+	241672, 
+	218021, 
+	195084, 
+	173050, 
+	152082, 
+	132318, 
+	113868, 
+	96816, 
+	81218, 
+	67105, 
+	54480, 
+	43325, 
+	33601, 
+	25249, 
+	18193, 
+	12345,  };
 	
 	for (int bitCount=0; bitCount < 64; bitCount++) {
 		//extracting low bit
@@ -2451,6 +2464,30 @@ void cic_filter(unsigned long long bitStream, int* out) {
 		bitStream >>= 1;
 	}
 
+	
+}
+
+
+///// converting bit-stream into integer #########
+void deltaSigmaToInt(unsigned long long bitStream, int* out) {
+	//static int* combDelayBasePointer=0; //full pointers to memory
+	const unsigned long long mask = 1;
+	for (int x1=0; x1 < 64; x1++) {
+		// processing of a bit from bit stream
+	 
+		//1)Add the lowest bit to acc:
+	      if ( bitStream & mask) {
+	      	//when 1 in bit-stream, asign maximum positive
+	      	 *out =  100000000;
+		  } else {
+		  	//when 0 in bit-stream , assign minimum value
+		  	 *out = -100000000;
+		  }
+		 //2)increment out opointer
+		 out++;
+		//4) shift bits of bitstream
+		bitStream >>= 1;
+	}
 	
 }
 //CIC filter with common coeficient N = 64

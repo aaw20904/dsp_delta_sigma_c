@@ -255,6 +255,8 @@ void cic_filter(unsigned long long bitStream, int* out);
 void filter128OfBlock(unsigned char* inputStream,  int* outputData,unsigned int bytesOfStreamPerBlock);
 void filter64OfBlock(unsigned char* inputStream, int* outputData,unsigned int bytesOfStreamPerBlock);
 void deltaSigmaToInt(unsigned long long bitStream, int* out);
+void cic_4x4 (unsigned long long bitStream, int* out);
+void cicThridOrder(unsigned long long bitStream, int* out);
 
 int main(int argc, char *argv[]) {
 	FILE* rawIntegersFile;
@@ -271,7 +273,7 @@ int main(int argc, char *argv[]) {
 	short waveBuffer[8292];
 	unsigned long long  *auxPtrToBitStream;
     int  *auxPtrToFilteredBuffer;
-    int *auxPtrToRawIntegrs;
+    int *auxPtrToRawIntegers;
 	//amount of 32bit words per block 
     const unsigned int intWordsPerBlock = 8192;
     //amount of 64bit words of bitstream per block 
@@ -291,6 +293,10 @@ int main(int argc, char *argv[]) {
     //-------------------DBG-}
     //open bs file
     bitStreamFile = fopen("stream1.bin","rb");
+    if(bitStreamFile == NULL){
+    	printf("Can`t open file stream1.bin");
+    	return -1;
+	}
  
     //read bitstream file size
     fseek(bitStreamFile,0,SEEK_END);
@@ -318,12 +324,12 @@ int main(int argc, char *argv[]) {
 		//2.2)iterate the block and processing data
 		for (int y1=0; y1<bsLongPerBlock; y1++) {
 		      //a) processing 64bits of BS
-			  	/////filter64_v5(*auxPtrToBitStream, auxPtrToFilteredBuffer);
-			  	cic_filter(*auxPtrToBitStream, auxPtrToFilteredBuffer);
-			  	deltaSigmaToInt(*auxPtrToBitStream, auxPtrToRawIntegers);
+			  //cic_filter(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			    cic_filter(*auxPtrToBitStream, auxPtrToFilteredBuffer);
+			  	 deltaSigmaToInt(*auxPtrToBitStream, auxPtrToRawIntegers);
 			  //b)increment pointers
 			  auxPtrToBitStream++;
-			  auxPtrToRawIntegers++;
+			  auxPtrToRawIntegers += 64;
 			  auxPtrToFilteredBuffer += 64;
 		}
 		
@@ -354,7 +360,8 @@ int main(int argc, char *argv[]) {
 		 auxPtrToFilteredBuffer = filteredBuffer;
 		for (int a9=0; a9<intWordsPerBlock; a9++) {
 			
-			auxPtrToFilteredBuffer[a9] = (unsigned int) DigFil3K_1((float)auxPtrToFilteredBuffer[a9]);
+			//auxPtrToFilteredBuffer[a9] = (unsigned int) DigFil3K_1((float)auxPtrToFilteredBuffer[a9]);
+			auxPtrToFilteredBuffer[a9] =   auxPtrToFilteredBuffer[a9];
 		}
 		//2)decimate block
 		decimateBlock(filteredBuffer,waveBuffer, (intWordsPerBlock >> 6));
@@ -427,15 +434,14 @@ void filter64OfBlock(unsigned char* inputStream,   int* outputData,unsigned int 
 }
 
 void decimateBlock( int* input,   short* output, unsigned int outputSize){
-	float sample;
+	 
 	int avg;
- 
+ float sample;
    for(;outputSize > 0;){
-     avg=0;
-     for (short x1=0;x1<64;x1++){
-     	avg += input[x1];
-	 }
-   	 avg <<= 3;
+     
+    avg = *input;
+    avg <<= 8;
+    //avg >>= 3;
    	sample = (float)avg;
    	
   	*output =  (short) DigFil(sample);
@@ -2478,10 +2484,10 @@ void deltaSigmaToInt(unsigned long long bitStream, int* out) {
 		//1)Add the lowest bit to acc:
 	      if ( bitStream & mask) {
 	      	//when 1 in bit-stream, asign maximum positive
-	      	 *out =  100000000;
+	      	 *out =  1000000000;
 		  } else {
 		  	//when 0 in bit-stream , assign minimum value
-		  	 *out = -100000000;
+		  	 *out = -1000000000;
 		  }
 		 //2)increment out opointer
 		 out++;
@@ -2490,82 +2496,73 @@ void deltaSigmaToInt(unsigned long long bitStream, int* out) {
 	}
 	
 }
-//CIC filter with common coeficient N = 64
-void cic_4x4 (unsigned long long bitStream, int* out) {
- //indexes
- const unsigned long long streamMask =1; 
- const unsigned char maxIndex=3; 
- static unsigned char  comb2OutpIdx, comb3OutpIdx, comb1OutpIdx, comb4OutpIdx=0;
- 
- static unsigned char comb1InpIdx,comb2InpIdx,comb3InpIdx,comb4InpIdx =1;
- static int combSamples1[4]={0};
- static int combSamples2[4]={0};
- static int combSamples3[4]={0};
- static int combSamples4[4]={0};
 
- static int acc1, acc2, acc3, acc4 = 0;
- static int comb1, comb2, comb3, comb4 = 0;
- for (int x1=0; x1<64; x1++) {
- 	//*****1-st filter (CIC bit-filter)
- 	//a) accumulater 
- 	acc1 += (bitStream & streamMask);
- 	//b) assign acc result to a comb delay
- 	combSamples1[comb1InpIdx] = acc1;
-	 //c) calculate comb
-	 comb1 = acc1 - combSamples1[comb1OutpIdx];
-	 //d)increment indexes
-	 //e) 'wrap around'
-	 comb1InpIdx = (comb1InpIdx + 1) %  maxIndex;
-	 comb1OutpIdx = (comb1OutpIdx + 1) %  maxIndex;
-	 //****2-nd filter CIC
-	 //runs every 4-nd time
-	 if ( (x1 % 4) == 0) {
-	 	//acc, shifting to reconstruct input value
-	 	acc2 += (comb1 << 2); 
-	 	//b) assign acc result to a comb delay
-	 	combSamples2[comb2InpIdx] = acc2;
-		 //c) calculate comb
-		 comb2 = acc2 - combSamples2[comb2OutpIdx];
-			 //d)increment indexes
-		 //e) 'wrap around'
-		 comb2InpIdx = (comb2InpIdx + 1) %  maxIndex;
-		 comb2OutpIdx = (comb2OutpIdx + 1) %  maxIndex;
-	 }
-	 //**3-d filter CIC
-	  if ( (x1 % 16) == 0) {
-	 	//acc, shifting to reconstruct input value
-	 	acc3 += (comb2 << 2); 
-	 	//b) assign acc result to a comb delay
-	 	combSamples3[comb3InpIdx] = acc3;
-		 //c) calculate comb
-		 comb3 = acc3 - combSamples3[comb3OutpIdx];
-		 	 //d)increment indexes
-		 //e) 'wrap around'
-		 comb3InpIdx = (comb3InpIdx + 1) %  maxIndex;
-		 comb3OutpIdx = (comb3OutpIdx + 1) %  maxIndex;
-	 }
-	 //***4-th filter CIC
-	 if ( (x1 % 32) == 0) {
-	 	//acc, shifting to reconstruct input value
-	 	acc4 += (comb3 << 2); 
-	 	//b) assign acc result to a comb delay
-	 	combSamples4[comb4InpIdx] = acc4;
-		 //c) calculate comb
-		 comb4 = acc4 - combSamples4[comb4OutpIdx];
-		 	 //d)increment indexes
-		 //e) 'wrap around'
-		 comb4InpIdx = (comb4InpIdx + 1) %  maxIndex;
-		 comb4OutpIdx = (comb4OutpIdx + 1) %  maxIndex;
-	 }
-	 //when x1 == 63, write data from 3-d CIC into output
-	 if ((x1 & 63) == 0 ) {
-	 	*out = comb4;
-	 }
-	 
-	 bitStream >>= 1;
-	  
- }
+void cicThridOrder(unsigned long long bitStream, int* out) {
+	//static int* combDelayBasePointer=0; //full pointers to memory
+	unsigned char comb1IdxIn = 0;
+	unsigned char comb1IdxOut = 1;
+	unsigned char comb2IdxIn = 0;
+	unsigned char comb2IdxOut = 1;
+	unsigned char comb3IdxIn = 0;
+	unsigned char  comb3IdxOut =1;
+	
+	static int comb1Samples [64] = {0}; //delay buffer
+	static int comb2Samples [64] = {0}; //delay buffer
+	static int comb3Samples [64] = {0}; //delay buffer
+	
+	int  comb1 = 0;
+	int  comb2 = 0;
+	int  comb3 = 0;
+	
+	static int acc1 = 0;
+	static int acc2 = 0;
+	static int acc3 = 0;
+	const unsigned long long mask = 1;
+	#define DELAY_SIZE 64  // Comb delay size -1 
  
- 
+	
+	for (int x1=0; x1 < 64; x1++) {
+			// processing of a bit from bit stream
+	  /****first filter stage***/
+	  /***acc1**/
+		//1)Accumulators section:
+	      acc1 += bitStream & mask;
+	      acc2 += acc1;
+	      acc3 += acc2;
+	      //2) combs section:
+	      //A) first stage:
+	      comb1 = acc3 - comb1Samples [ comb1IdxOut]; //comb out calculating
+	      comb1Samples[comb1IdxIn] = acc3; //push input value to delay line
+	      comb1IdxIn++;  //update indexes
+		  comb1IdxOut++;  //update indexes
+		  //wrap around implementation
+		  comb1IdxIn = comb1IdxIn % DELAY_SIZE;
+		  comb1IdxOut = comb1IdxOut % DELAY_SIZE;
+		  //comb1 <<= 8;
+		 //B) Second stage:
+	      comb2 = comb1 - comb2Samples [ comb2IdxOut]; //comb out calculating
+	      comb2Samples[comb2IdxIn] = comb1; //push input value to delay line
+	      comb2IdxIn++;  //update indexes
+		  comb2IdxOut++;  //update indexes
+		  //wrap around implementation
+		  comb2IdxIn = comb2IdxIn % DELAY_SIZE;
+		  comb2IdxOut = comb2IdxOut % DELAY_SIZE;
+		  //C) Thrid:
+	      comb3 = comb2 - comb3Samples [ comb3IdxOut]; //comb out calculating
+	      comb3Samples[comb3IdxIn] = comb2; //push input value to delay line
+	      comb3IdxIn++;  //update indexes
+		  comb3IdxOut++;  //update indexes
+		  //wrap around implementation
+		  comb3IdxIn = comb3IdxIn % DELAY_SIZE ;
+		  comb3IdxOut = comb3IdxOut % DELAY_SIZE;
+		  
+		 //$ save new sample
+		 *out = comb3;
+		 //7)increment out opointer
+		 out++;
+		//8) shift bits of bitstream
+		bitStream >>= 1;
+	}
+	
 }
 	

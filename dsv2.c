@@ -41,10 +41,13 @@ typedef struct wav_header {
 } wav_header;
 
 void cicThridOrder(unsigned long long bitStream, int* out);
+void deltaSigmaToInt(unsigned long long bitStream, int* out);
+
 int *ipHiSpeedAudioBuf, *ipBitStreamBuf, *ipBitStream, *ipRawAudio;
 short *spWaveBuffer, *spWavePtr;
 int iChunksOfWave;
-unsigned long long *lpStreambuffer, *lpBitStreamBuf;
+unsigned long long *lpBitStream, *lpBitStreamBuf;
+unsigned char * ucpBitstreamBuffer;
 
 
 int main(int argc, char *argv[]) {
@@ -66,7 +69,7 @@ int main(int argc, char *argv[]) {
 		
 		//alocate 64000 integer cells
 		ipHiSpeedAudioBuf = malloc(256100);//4bytes pe sample, 64*4=256
-		lpBitStreamBuf = malloc(8000); //8000_bytes*8_bits=64KBit
+		ucpBitstreamBuffer = malloc(8000); //8000_bytes*8_bits=64KBit
 		spWaveBuffer = malloc(16000);  //because OSR=8, so 64000/8=8000samples, (16000bytes)
 		//read stream size
 		fseek(fileBitStream, 0, SEEK_END);
@@ -75,74 +78,67 @@ int main(int argc, char *argv[]) {
 		//calculate number of whole blocks (remainder ignored)
 		numBitStreamWhBlocks = streamLength  / 8000; //8000*8_bits=64_kBits
 		//size of raw audio data
-		rawAudioData32Length = streamLength * 8;
+		rawAudioData32Length = streamLength * 4;
 		//create a new file for record 
 		fileFilteredAudioData = fopen("filteredaudio","wb");
-		
+		lpBitStream = (unsigned long long*)ucpBitstreamBuffer;
 	    for (unsigned int blockCounter=0; blockCounter < numBitStreamWhBlocks; ) {
 	    	//read block of data (64Kbit)
-	    	fread (ipBitStreamBuf,8000,1,fileBitStream);
-	    	blockCounter += 8000;
+	    	fread (ucpBitstreamBuffer, 8000, 1, fileBitStream);
+	    	blockCounter += 1;
 	    	///processing a block (8000bytes, 64KBits) of bitstream
 	    	 ipRawAudio = ipHiSpeedAudioBuf;
 	    	   //1) processing one block (64KBits) of bitstream
 	    	   for (int innerCntr=0; innerCntr < 1000; innerCntr++) {
 	    	    /// 64KBits = 8000bytes = 1000 long_long(64bit)words   	
 	    	   	//A) read 64bit of bitstream, filtering it, saving 64 int values in audio buffer 
-	    	   	cicThridOrder(lpBitStreamBuf[innerCntr],ipRawAudio);
+	    	   	//deltaSigmaToInt(lpBitStream[innerCntr], ipRawAudio);
+	    	   	cicThridOrder(lpBitStream[innerCntr],ipRawAudio);
 	    	   	//B) increase pointer to audio buffer
 	    	   	ipRawAudio += 64;
 			   }
 			   //2) Saving result into a file
-			   fwrite(ipHiSpeedAudioBuf, 64000, 1, fileFilteredAudioData);
+			   fwrite(ipHiSpeedAudioBuf, 64000, 4, fileFilteredAudioData);
 		}
-		//prepare wave header
-		audioHeader.audio_format = 1;
-		audioHeader.bit_depth = 16;
-		audioHeader.byte_rate =96000;
-		audioHeader.data_bytes = rawAudioData32Length * 2;
-		audioHeader.data_header = "data";
-		audioHeader.fmt_chunk_size = 16;
-		audioHeader.fmt_header = "fmt";
-		audioHeader.num_channels = 1;
-		audioHeader.riff_header ="RIFF";
-		audioHeader.sample_alignment = 2;
-		audioHeader.sample_rate = 48000;
-		audioHeader.wave_header ="WAVE";
-		audioHeader.wav_size = 1; //???????????????????????????????
+		
 		//close file, open as read only
 		fclose(fileFilteredAudioData);
-		fileFilteredAudioData = fopen("filteredaudio","rb");
-		//open wave file
-		fileWave = fopen("processed.wav","wb");
-	    //write header
-	    fwrite(&audioHeader,sizeof(wav_header),1,fileWave);
-	    
-		for (int blockCounter=0; blockCounter < numBitStreamWhBlocks; blockCounter++  ) {
-			//A) read chunk
-			fread(ipHiSpeedAudioBuf,64000,4,fileFilteredAudioData);
-			int waveIdx=0;
-			//B) iterate chunk
-			for (int chCnt=0; chCnt < 64000; chCnt +=8) {
-				//each 8 sample - decimation
-				spWaveBuffer[waveIdx] = (short)ipHiSpeedAudioBuf[chCnt];
-				waveIdx++;
-			}
-			//B) write decimated chunk of data into wave file
-			fwrite(spWaveBuffer, 16000, 1, fileWave);
-		}
+	
 		
 		//close files , free memory
 		
 		fclose(fileBitStream);
-		fclose (fileWave);
-		fclose (ipHiSpeedAudioBuf);
+		//fclose (fileWave);
+		fclose (fileFilteredAudioData);
 		free(spWaveBuffer);
 		free(ipHiSpeedAudioBuf);
 		free(lpBitStreamBuf);
  
 	return 0;
 }
+
+void deltaSigmaToInt(unsigned long long bitStream, int* out) {
+	//static int* combDelayBasePointer=0; //full pointers to memory
+	const unsigned long long mask = 1;
+	for (int x1=0; x1 < 64; x1++) {
+		// processing of a bit from bit stream
+	 
+		//1)Add the lowest bit to acc:
+	      if ( bitStream & mask) {
+	      	//when 1 in bit-stream, asign maximum positive
+	      	 *out =  1000000000;
+		  } else {
+		  	//when 0 in bit-stream , assign minimum value
+		  	 *out = -1000000000;
+		  }
+		 //2)increment out opointer
+		 out++;
+		//4) shift bits of bitstream
+		bitStream >>= 1;
+	}
+	
+}
+
 
 void cicThridOrder(unsigned long long bitStream, int* out) {
 	//static int* combDelayBasePointer=0; //full pointers to memory
@@ -220,4 +216,54 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 		bitStream >>= 1;
 	}
 	
+}
+
+void dbgFunc(void) {
+	/*
+	
+		//prepare wave header
+		audioHeader.audio_format = 1;
+		audioHeader.bit_depth = 16;
+		audioHeader.byte_rate =96000;
+		audioHeader.data_bytes = rawAudioData32Length * 2;
+		audioHeader.data_header[0] = 'd';
+		audioHeader.data_header[1] = 'a';
+		audioHeader.data_header[2] = 't';
+		audioHeader.data_header[3] = 'a';
+		audioHeader.fmt_chunk_size = 16;
+		audioHeader.fmt_header[0] = "f";
+		audioHeader.fmt_header[1] = "m";
+		audioHeader.fmt_header[2] = "t";
+		audioHeader.num_channels = 1;
+		audioHeader.riff_header[0] ='R';
+		audioHeader.riff_header[1] ='I';
+		audioHeader.riff_header[2] ='F';
+		audioHeader.riff_header[3] ='F';
+		audioHeader.sample_alignment = 2;
+		audioHeader.sample_rate = 48000;
+		audioHeader.wave_header[0] ='W';
+		audioHeader.wave_header[1] ='A';
+		audioHeader.wave_header[2] ='V';
+		audioHeader.wave_header[3]='E';
+		audioHeader.wav_size = 1; //???????????????????????????????
+		fileFilteredAudioData = fopen("filteredaudio","rb");
+		//open wave file
+		fileWave = fopen("processed.wav","wb");
+	    //write header
+	    fwrite(&audioHeader,sizeof(wav_header),1,fileWave);
+	    
+		for (int blockCounter=0; blockCounter < numBitStreamWhBlocks; blockCounter++  ) {
+			//A) read chunk
+			fread(ipHiSpeedAudioBuf,64000,4,fileFilteredAudioData);
+			int waveIdx=0;
+			//B) iterate chunk
+			for (int chCnt=0; chCnt < 64000; chCnt +=8) {
+				//each 8 sample - decimation
+				spWaveBuffer[waveIdx] = (short)ipHiSpeedAudioBuf[chCnt];
+				waveIdx++;
+			}
+			//B) write decimated chunk of data into wave file
+			fwrite(spWaveBuffer, 16000, 1, fileWave);
+		}
+		*/
 }

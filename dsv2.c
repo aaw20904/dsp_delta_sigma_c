@@ -41,13 +41,13 @@ typedef struct wav_header {
 } wav_header;
 
 void cicThridOrder(unsigned long long bitStream, int* out);
-int *rawHiSpeedAudio, *rawBitStream, *bitStreamPtr, rawAudioPtr;
-unsigned long long lpStreambuffer;
+int *ipHiSpeedAudioBuf, *ipBitStreamBuf, *ipBitStream, *ipRawAudio;
+unsigned long long *lpStreambuffer, *lpBitStreamBuf;
 
 int main(int argc, char *argv[]) {
 	FILE* fileBitStream;
-	FILE* fileRawData;
-	int numOfBlocks =0;
+	FILE* fileFilteredAudioData;
+	int numBitStreamWhBlocks =0;
 	int streamLength =0;
 	int rawAudioData32Length =0; //number of 32bit samples
 	unsigned long long myTestData;
@@ -58,30 +58,44 @@ int main(int argc, char *argv[]) {
 			return -1;
 		}
 		
+		
 		//alocate 64000 integer cells
-		rawHiSpeedAudio = malloc(256100);
-		rawBitStream = malloc(8000); //8000_bytes*8_bits=64KBit
+		ipHiSpeedAudioBuf = malloc(256100);
+		lpBitStreamBuf = malloc(8000); //8000_bytes*8_bits=64KBit
 		//read stream size
 		fseek(fileBitStream, 0, SEEK_END);
 		streamLength = ftell(fileBitStream);
 		fseek(fileBitStream,0,SEEK_SET);
 		//calculate number of whole blocks (remainder ignored)
-		numOfBlocks = streamLength  / 8000; //8000*8_bits=64_kBits
+		numBitStreamWhBlocks = streamLength  / 8000; //8000*8_bits=64_kBits
 		//size of raw audio data
 		rawAudioData32Length = streamLength * 8;
+		//create a new file for record 
+		fileFilteredAudioData = fopen("filteredaudio","wb");
 		
-	    for (unsigned int blockCounter=0; blockCounter < numOfBlocks; ) {
+	    for (unsigned int blockCounter=0; blockCounter < numBitStreamWhBlocks; ) {
 	    	//read block of data (64Kbit)
-	    	fread (rawBitStream,8000,1,fileBitStream);
+	    	fread (ipBitStreamBuf,8000,1,fileBitStream);
 	    	blockCounter += 8000;
-	    	///processing a block (8000bytes) of bitstream
-	    	lpStreambuffer = rawBitStream; 
-	    	   for (int innerCntr=0; innerCntr < 8000; innerCntr++){
-	    	   	
-	    	   	
-	    	   	
+	    	///processing a block (8000bytes, 64KBits) of bitstream
+	    	 ipRawAudio = ipHiSpeedAudioBuf;
+	    	   //1) processing one block (64KBits) of bitstream
+	    	   for (int innerCntr=0; innerCntr < 1000; innerCntr++) {
+	    	    /// 64KBits = 8000bytes = 1000 long_long(64bit)words   	
+	    	   	//A) read 64bit of bitstream, filtering it, saving 64 int values in audio buffer 
+	    	   	cicThridOrder(lpBitStreamBuf[innerCntr],ipRawAudio);
+	    	   	//B) increase pointer to audio buffer
+	    	   	ipRawAudio += 64;
 			   }
+			   //2) Saving result into a file
+			   fwrite(ipHiSpeedAudioBuf, 64000, 1, fileFilteredAudioData);
 		}
+		
+		//close files , free memory
+		fclose(fileFilteredAudioData);
+		fclose(fileBitStream);
+		free(ipHiSpeedAudioBuf);
+		free(lpBitStreamBuf);
  
 	return 0;
 }
@@ -94,28 +108,22 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 	unsigned static char comb2IdxOut = 1;
 	unsigned static char comb3IdxIn = 0;
 	unsigned static char  comb3IdxOut =1;
-	unsigned static char comb4IdxIn = 0;
-	unsigned static char  comb4IdxOut =1;
-	unsigned static char comb5IdxIn = 0;
-	unsigned static char  comb5IdxOut =1;
+	
 	
 	static int comb1Samples [64] = {0}; //delay buffer
 	static int comb2Samples [64] = {0}; //delay buffer
 	static int comb3Samples [64] = {0}; //delay buffer
-	static int comb4Samples [64] = {0}; //delay buffer
-	static int comb5Samples [64] = {0}; //delay buffer
+
 	
 	int  comb1 = 0;
 	int  comb2 = 0;
 	int  comb3 = 0;
-		int  comb4 = 0;
-		int  comb5 = 0;
+	
 	
 	static int acc1 = 0;
 	static int acc2 = 0;
 	static int acc3 = 0;
-	static int acc4 = 0;
-	static int acc5 = 0;
+
 
 	const unsigned long long mask = 1;
 	#define DELAY_SIZE 64  // Comb delay size -1 
@@ -132,14 +140,12 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 	       
 	      acc3 += acc2;
 	      
-	      acc4 += acc3;
-	      
-	      acc5 += acc4;
+	 
 	      //2) combs section:
 	      //A) first stage:
 	      
-	      comb1 = acc5 - comb1Samples [ comb1IdxOut]; //comb out calculating
-	      comb1Samples[comb1IdxIn] = acc5; //push input value to delay line
+	      comb1 = acc3 - comb1Samples [ comb1IdxOut]; //comb out calculating
+	      comb1Samples[comb1IdxIn] = acc3; //push input value to delay line
 	      comb1IdxIn++;  //update indexes
 		  comb1IdxOut++;  //update indexes
 		  //wrap around implementation
@@ -160,27 +166,10 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 	      comb3IdxIn++;  //update indexes
 		  comb3IdxOut++;  //update indexes
 		  //wrap around implementation
-		  comb3IdxIn = comb3IdxIn % DELAY_SIZE ;
+		  comb3IdxIn = comb3IdxIn % DELAY_SIZE;
 		  comb3IdxOut = comb3IdxOut % DELAY_SIZE;
-		  //D) forth
-		  comb4 = comb3 - comb3Samples [ comb4IdxOut]; //comb out calculating
-	      comb4Samples[comb4IdxIn] = comb3; //push input value to delay line
-	      comb4IdxIn++;  //update indexes
-		  comb4IdxOut++;  //update indexes
-		  //wrap around implementation
-		  comb4IdxIn = comb4IdxIn % DELAY_SIZE ;
-		  comb4IdxOut = comb4IdxOut % DELAY_SIZE;
-		  //E) fifth
-		  comb5 = comb4 - comb5Samples [ comb5IdxOut]; //comb out calculating
-	      comb5Samples[comb5IdxIn] = comb4; //push input value to delay line
-	      comb5IdxIn++;  //update indexes
-		  comb5IdxOut++;  //update indexes
-		  //wrap around implementation
-		  comb5IdxIn = comb5IdxIn % DELAY_SIZE ;
-		  comb5IdxOut = comb5IdxOut % DELAY_SIZE;
-		  
-		 //$ save new sample
-		 *out = comb5;
+	  	 //$ save new sample
+	      *out = comb3;
 		 //7)increment out opointer
 		 out++;
 		//8) shift bits of bitstream

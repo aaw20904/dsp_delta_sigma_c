@@ -92,8 +92,8 @@ int main(int argc, char *argv[]) {
 	    	   for (int innerCntr=0; innerCntr < 1000; innerCntr++) {
 	    	    /// 64KBits = 8000bytes = 1000 long_long(64bit)words   	
 	    	   	//A) read 64bit of bitstream, filtering it, saving 64 int values in audio buffer 
-	    	   	//deltaSigmaToInt(lpBitStream[innerCntr], ipRawAudio);
-	    	   	cicThridOrder(lpBitStream[innerCntr],ipRawAudio);
+	    	   	deltaSigmaToInt(lpBitStream[innerCntr], ipRawAudio);
+	    	   	//cicThridOrder(lpBitStream[innerCntr],ipRawAudio);
 	    	   	//B) increase pointer to audio buffer
 	    	   	ipRawAudio += 64;
 			   }
@@ -118,18 +118,21 @@ int main(int argc, char *argv[]) {
 }
 
 void deltaSigmaToInt(unsigned long long bitStream, int* out) {
+	  
 	//static int* combDelayBasePointer=0; //full pointers to memory
-	const unsigned long long mask = 1;
+	const unsigned long long mask = 0x00000001;
 	for (int x1=0; x1 < 64; x1++) {
 		// processing of a bit from bit stream
-	 
+	    
 		//1)Add the lowest bit to acc:
 	      if ( bitStream & mask) {
-	      	//when 1 in bit-stream, asign maximum positive
-	      	 *out =  1000000000;
+	      	//when 1 in bit-stream, asign maximum positive +
+	      	 *out =  0x40000000;
+	      	  
 		  } else {
-		  	//when 0 in bit-stream , assign minimum value
-		  	 *out = -1000000000;
+		  	//when 0 in bit-stream , assign minimum value -
+		  	 *out = 0xC0000000;
+		   
 		  }
 		 //2)increment out opointer
 		 out++;
@@ -148,7 +151,7 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 	unsigned static char comb2IdxOut = 1;
 	unsigned static char comb3IdxIn = 0;
 	unsigned static char  comb3IdxOut =1;
-	
+    
 	
 	static int comb1Samples [64] = {0}; //delay buffer
 	static int comb2Samples [64] = {0}; //delay buffer
@@ -180,7 +183,7 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 	       
 	      acc3 += acc2;
 	      
-	 
+	    
 	      //2) combs section:
 	      //A) first stage:
 	      
@@ -191,7 +194,7 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 		  //wrap around implementation
 		  comb1IdxIn = comb1IdxIn % DELAY_SIZE;
 		  comb1IdxOut = comb1IdxOut % DELAY_SIZE;
-		  //comb1 <<= 8;
+		 
 		 //B) Second stage:
 	      comb2 = comb1 - comb2Samples [ comb2IdxOut]; //comb out calculating
 	      comb2Samples[comb2IdxIn] = comb1; //push input value to delay line
@@ -209,6 +212,7 @@ void cicThridOrder(unsigned long long bitStream, int* out) {
 		  comb3IdxIn = comb3IdxIn % DELAY_SIZE;
 		  comb3IdxOut = comb3IdxOut % DELAY_SIZE;
 	  	 //$ save new sample
+	  	  comb3 <<=8;
 	      *out = comb3;
 		 //7)increment out opointer
 		 out++;
